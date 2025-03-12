@@ -37,7 +37,7 @@ prompt_template = """
     """
 
 
-url = "http://127.0.0.1:8000/response"
+url = "https://patent-chat-bot-qa-2dkcwif5ra-ew.a.run.app/response"
 
 # Set a default model
 if "openai_model" not in st.session_state:
