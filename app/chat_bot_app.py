@@ -1,18 +1,27 @@
 import streamlit as st
-# from dotenv import load_dotenv
 import requests
+import datetime
+import pytz
 
 
-# load_dotenv()
+st.set_page_config(layout="wide")
 
-st.title("Patent laws and rules expert")
+if "start_time" not in st.session_state:
+    st.session_state.start_time = datetime.datetime.now(pytz.timezone("Israel")).strftime("%d-%m-%y %H:%M:%S")
 
-st.image("images/patent_lawyer.jpg", width=300)
+left, main, right = st.columns([0.2, 0.6, 0.2])
 
-st.markdown("##### Hi Ariel, I'm here to answer any question you have regarding patent laws, rules, \
+main.title("Patent expert chatbot")
+left.markdown("")
+left.markdown("#### Previous Conversations")
+
+main.image("images/patent_lawyer.jpg", width=300)
+
+main.markdown("##### Hi Ariel, I'm here to answer any question you have regarding patent laws, rules, \
     and the entire Manual of Patent Examining Procedure.")
-st.markdown("##### How may I help you today?")
-st.markdown("")
+main.markdown("##### How may I help you today?")
+main.markdown("")
+
 
 prompt_template = """
     # Persona
@@ -37,7 +46,28 @@ prompt_template = """
     """
 
 
-url = "https://patent-chat-bot-qa-2dkcwif5ra-ew.a.run.app/response"
+response_url = "https://patent-chat-bot-qa-2dkcwif5ra-ew.a.run.app/response"
+save_chat_history_url = "https://patent-chat-bot-qa-2dkcwif5ra-ew.a.run.app/save_chat_history"
+load_chat_history_url = "https://patent-chat-bot-qa-2dkcwif5ra-ew.a.run.app/load_chat_history"
+
+
+# Load previous conversations
+if "previous_conversations" not in st.session_state:
+    loading_status = requests.get(load_chat_history_url)
+    if loading_status.status_code == 200:
+        st.session_state.previous_conversations = loading_status.json()
+    else:
+        st.error("Failed to load previous conversations")
+
+# Display previous conversations on app rerun
+for k, v in st.session_state.previous_conversations.items():
+    if left.button(k):
+        if "messages" in st.session_state: # In case there are messages in the current session
+            st.session_state.messages = v
+            st.session_state.start_time = k
+        else: # In case there are no messages in the current session
+            st.session_state.messages = v
+
 
 # Set a default model
 if "openai_model" not in st.session_state:
@@ -51,39 +81,52 @@ if "messages" not in st.session_state:
 for i, message in enumerate(st.session_state.messages):
     if i != 0:
         if message["role"] == "user":
-            with st.chat_message(message["role"], avatar="images/Ariel_Averbuch_avatar.jpg"):
-                st.markdown(message["content"])
+            with main:
+                with st.chat_message(message["role"], avatar="images/Ariel_Averbuch_avatar.jpg"):
+                    st.markdown(message["content"])
         else:
-            with st.chat_message(message["role"], avatar="images/patent_lawyer_avatar.jpg"):
-                st.markdown(message["content"])
+            with main:
+                with st.chat_message(message["role"], avatar="images/patent_lawyer_avatar.jpg"):
+                    st.markdown(message["content"])
 
 # Accept user input
 query = st.chat_input("What is your question?")
-if query:
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": query})
-    # Display user message in chat message container
-    with st.chat_message("user", avatar="images/Ariel_Averbuch_avatar.jpg"):
-        st.markdown(query)
+with main:
+    # query = st.chat_input("What is your question?")
 
-    # Display assistant response in chat message container
-    with st.chat_message("assistant", avatar="images/patent_lawyer_avatar.jpg"):
+    if query:
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": query})
+        # Display user message in chat message container
+        with st.chat_message("user", avatar="images/Ariel_Averbuch_avatar.jpg"):
+            st.markdown(query)
 
-        def fetch_response(url, query, messages):
-            payload = {
-                "query": query,
-                "messages": messages  # Send entire chat history
-            }
+        # Display assistant response in chat message container
+        with st.chat_message("assistant", avatar="images/patent_lawyer_avatar.jpg"):
 
-            response = requests.post(url, json=payload, stream=True)
+            def fetch_response(response_url, query, messages):
+                payload = {
+                    "query": query,
+                    "messages": messages  # Send entire chat history
+                }
 
-            def stream():
-                for chunk in response.iter_content(chunk_size=1024):
-                    if chunk:
-                        yield chunk.decode("utf-8")  # Decode and stream response
+                response = requests.post(response_url, json=payload, stream=True)
 
-            return stream
+                def stream():
+                    for chunk in response.iter_content(chunk_size=1024):
+                        if chunk:
+                            yield chunk.decode("utf-8")  # Decode and stream response
 
-        ai_response = st.write_stream(fetch_response(url, query, st.session_state.messages))
+                return stream
 
-    st.session_state.messages.append({"role": "assistant", "content": ai_response})
+            ai_response = st.write_stream(fetch_response(response_url, query, st.session_state.messages))
+
+        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+
+
+        # Send the chat history to the backend
+        payload = {
+            "chat_history": st.session_state.messages,
+            "start_time": st.session_state.start_time
+        }
+        response = requests.post(save_chat_history_url, json=payload)
